@@ -1,0 +1,26 @@
+tools:
+  - class_name: "verl.tools.image_zoom_in_tool.ImageZoomInTool"
+    config:
+      num_workers: 256
+      rate_limit: 256
+      timeout: 60
+      type: native
+    tool_schema:
+      type: "function"
+      function:
+        name: "image_zoom_in_tool"
+        description: "通过裁剪图像中指定区域（基于边界框 bbox 和可选的对象标签）来放大该区域。"
+        parameters:
+          type: "object"  
+          properties:
+            bbox_2d:
+              type: "array"
+              items:
+                type: "number"
+              minItems: 4
+              maxItems: 4
+              description: "放大区域的边界框，格式为 [x1, y1, x2, y2]，其中 (x1, y1) 是左上角，(x2, y2) 是右下角坐标。"
+            label:
+              type: "string"
+              description: "该边界框中对象的名称或标签（可选）。"
+          required: ["bbox_2d"]
