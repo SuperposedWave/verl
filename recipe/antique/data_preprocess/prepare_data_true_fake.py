@@ -8,9 +8,10 @@ from PIL import Image
 from io import BytesIO
 from tqdm import tqdm
 import base64
+from collections import Counter
 
 
-DATA_SOURCE = "forbidden_city_museum_llm_as_a_judge"
+DATA_SOURCE = "true_fake"
 
 SYSTEM_PROMPT = '''你是一个乐于助人的助手。'''
 
@@ -40,29 +41,34 @@ def load_image_as_bytes(image_path):
         return None
 
 
-def process_data(data, image_dir):
-    question = get_user_prompt('''请根据所给瓷器图片，分析瓷器在釉色、纹饰、器型、年代、皇帝等方面的特征，最后按照 “朝代皇帝 釉色纹饰器型”的格式命名瓷器，给出瓷器的鉴定结果。请在进行分析之后鉴定结果请用<answer>...</answer>括起来。例如：<answer>明成化 青花缠枝莲纹梅瓶</answer>。''')
-    images = data.get("images", [])
-    ground_truth = data.get("name")
+def process_data(data):
+    question = get_user_prompt('''请根据所给瓷器图片，鉴定瓷器的真伪。请在分析后选择调用工具或者回答，最终鉴定结果请按照<answer>真品</answer>或<answer>赝品</answer>的格式输出。''')
+    images = data.get("图片url(用\";\"分隔)", [])
+    # check if image exist, if not exist, warning, and delete from list
+    for img in images:
+        if not os.path.exists(img):
+            print(f"Warning: Image path does not exist: {img}")
+    images = [img for img in images if os.path.exists(img)]
+    ground_truth = data.get("鉴定结果")
 
     if not question or not images or not ground_truth:
         return None
-    if len(images) != 1:
-        return None
+    # if len(images) != 1:
+    #     return None
 
-    image_path = os.path.join(image_dir, images[0])
-    if not os.path.exists(image_path):
-        print(f"Image not found: {image_path}")
-        return None
+    # image_path = os.path.join(image_dir, images[0])
+    # if not os.path.exists(image_path):
+    #     print(f"Image not found: {image_path}")
+    #     return None
 
-    question = '<image>\n' + question
+    question = '<image>\n'*len(images) + question
     processed = {
         "data_source": DATA_SOURCE,
         "prompt": [
             {"role": "system", "content": SYSTEM_PROMPT},
             {"role": "user", "content": get_user_prompt(question)}
         ],
-        "images": [image_path],
+        "images": images,
         "ability": "antique",
         "reward_model": {
             "style": "rule",
@@ -77,7 +83,6 @@ def process_data(data, image_dir):
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument("--data_dir", required=True, help="Path to the dataset directory")
-    parser.add_argument("--image_dir", required=True, help="Path to the image directory")
     parser.add_argument("--output_dir", required=True, help="Path to save the processed data")
 
     args = parser.parse_args()
@@ -91,12 +96,17 @@ if __name__ == "__main__":
         print("No valid data found. Exiting.")
         exit(1)
 
-    data_json = [data for data in data_json if data['id'].endswith('dynasty')]
+    # data_json = [data for data in data_json if data['id'].endswith('dynasty')]
 
     # 构建数据列表
-    processed_data = [process_data(data, args.image_dir) for data in tqdm(data_json)]
+    processed_data = [process_data(data) for data in tqdm(data_json)]
     processed_data = [data for data in processed_data if data is not None]
     print(f"Processed {len(processed_data)} valid entries.")
+
+    counter_list = [len(data['images']) for data in processed_data]
+    print(Counter(counter_list))
+
+
 
     #show the first 5 entries for debugging
     for i, entry in enumerate(processed_data[:5]):

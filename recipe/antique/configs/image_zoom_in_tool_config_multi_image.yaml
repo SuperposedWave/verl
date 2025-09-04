@@ -1,5 +1,5 @@
 tools:
-  - class_name: "verl.tools.image_zoom_in_tool.ImageZoomInTool"
+  - class_name: "verl.tools.multi_image_zoom_in_tool.MultiImageZoomInTool"
     config:
       num_workers: 256
       rate_limit: 256
@@ -9,10 +9,13 @@ tools:
       type: "function"
       function:
         name: "image_zoom_in_tool"
-        description: "通过裁剪图像中指定区域（基于边界框 bbox 和可选的对象标签）来放大该区域。"
+        description: "通过裁剪指定图像中（基于index）指定区域（基于边界框 bbox 和可选的对象标签）来放大该区域。"
         parameters:
           type: "object"  
           properties:
+            index:
+              type: "integer"
+              description: "要处理的图像的索引（从1开始）。"
             bbox_2d:
               type: "array"
               items:
@@ -23,4 +26,4 @@ tools:
             label:
               type: "string"
               description: "该边界框中对象的名称或标签（可选）。"
-          required: ["bbox_2d"]
+          required: ["index", "bbox_2d"]

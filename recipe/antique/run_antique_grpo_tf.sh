@@ -12,7 +12,7 @@ export RAY_MASTER_PORT=6379
 
 timestamp=$(date '+%Y-%m-%d_%H-%M-%S')
 PROJECT_NAME=deepeyes_antique
-EXPERIMENT_NAME=train-from_sft-$timestamp
+EXPERIMENT_NAME=train-from_sft-tf-$timestamp
 
 BASEDIR=/inspire/hdd/project/qproject-multireasoning/shaowenqi-shaowenqi/zhouzhixiang/Project/verl
 
@@ -20,80 +20,77 @@ SAVE_CHECKPOINT_DIR=${BASEDIR}/checkpoints
 # DATASET_TRAIN=${BASEDIR}/dataset/train.parquet
 # DATASET_VAL=${BASEDIR}/dataset/val.parquet
 
-DATASET_1=/inspire/hdd/project/qproject-multireasoning/shaowenqi-shaowenqi/zhouzhixiang/Project/Antique/data/processed/train_gugong_V1.parquet
+DATASET_1=/inspire/hdd/project/qproject-multireasoning/shaowenqi-shaowenqi/zhouzhixiang/Project/Antique/data/processed/train_true_fake.parquet
+DATASET_2=/inspire/hdd/project/qproject-multireasoning/shaowenqi-shaowenqi/zhouzhixiang/Project/Antique/data/processed/val_true_fake.parquet
 
 REF_MODEL_PATH=/inspire/hdd/project/qproject-multireasoning/shaowenqi-shaowenqi/mazhongtian/model_results/output/Qwen2.5-7B-vl/System-Prompt/v54-20250826-075707/checkpoint-9417
 
 JUDGE_MODEL_PATH=/inspire/hdd/project/qproject-multireasoning/shaowenqi-shaowenqi/zhouzhixiang/Model/Qwen2.5-72B-Instruct
 
-export WORLD_SIZE=$((WORLD_SIZE - 1))
+# export WORLD_SIZE=$((WORLD_SIZE - 1))
 
 ray stop --force
 
 # SGLANG service configuration (on the last rank)
-if [ "$PET_NODE_RANK" -eq "$((WORLD_SIZE))" ]; then
-    # On SGLANG service node, use localhost
-    # llm_ip=$(hostname -I | awk '{print $1}')
-    llm_ip=$(ip route get 1.1.1.1 | awk '{for(i=1;i<=NF;i++) if ($i=="src") print $(i+1)}')
-    export LLM_AS_A_JUDGE_BASE="http://${llm_ip}:18901/v1"
-    mkdir -p $BASEDIR/tmp
-    echo $LLM_AS_A_JUDGE_BASE > $BASEDIR/tmp/llm_ip.txt
-    echo "LLM_AS_A_JUDGE_BASE: $LLM_AS_A_JUDGE_BASE"
-else
-    sleep 600
-fi
+# if [ "$PET_NODE_RANK" -eq "$((WORLD_SIZE))" ]; then
+#     # On SGLANG service node, use localhost
+#     # llm_ip=$(hostname -I | awk '{print $1}')
+#     llm_ip=$(ip route get 1.1.1.1 | awk '{for(i=1;i<=NF;i++) if ($i=="src") print $(i+1)}')
+#     export LLM_AS_A_JUDGE_BASE="http://${llm_ip}:18901/v1"
+#     mkdir -p $BASEDIR/tmp
+#     echo $LLM_AS_A_JUDGE_BASE > $BASEDIR/tmp/llm_ip.txt
+#     echo "LLM_AS_A_JUDGE_BASE: $LLM_AS_A_JUDGE_BASE"
+# else
+#     sleep 10
+# fi
 
 # Start SGLANG service on the last rank
-if [ "$PET_NODE_RANK" -eq "$((WORLD_SIZE))" ]; then
-    echo "Starting SGLANG service on rank $PET_NODE_RANK..."
-    python -m sglang.launch_server --model-path $JUDGE_MODEL_PATH \
-        --port 18901 \
-        --host 0.0.0.0 \
-        --served-model-name "judge" \
-        --tp-size 8 \
-        --context-length 32768 \
-        --trust-remote-code
-        # --log-requests false
-    # vllm serve $JUDGE_MODEL_PATH \
-    #     --port 18901 \
-    #     --host 0.0.0.0 \
-    #     --gpu-memory-utilization 0.8 \
-    #     --max-model-len 32768 \
-    #     --tensor-parallel-size 8 \
-    #     --served-model-name "judge" \
-    #     --trust-remote-code \
-    #     --disable-log-requests
-    exit 0
-fi
+# if [ "$PET_NODE_RANK" -eq "$((WORLD_SIZE))" ]; then
+#     echo "Starting SGLANG service on rank $PET_NODE_RANK..."
+#     python -m sglang.launch_server --model-path $JUDGE_MODEL_PATH \
+#         --port 18901 \
+#         --host 0.0.0.0 \
+#         --served-model-name "judge" \
+#         --tp-size 8 \
+#         --context-length 32768 \
+#         --trust-remote-code
+#         # --log-requests false
+#     # vllm serve $JUDGE_MODEL_PATH \
+#     #     --port 18901 \
+#     #     --host 0.0.0.0 \
+#     #     --gpu-memory-utilization 0.8 \
+#     #     --max-model-len 32768 \
+#     #     --tensor-parallel-size 8 \
+#     #     --served-model-name "judge" \
+#     #     --trust-remote-code \
+#     #     --disable-log-requests
+#     exit 0
+# fi
 
 # Start Ray cluster, the first rank starts the head node, other ranks join the cluster except the last rank
 if [ "$PET_NODE_RANK" -eq 0 ]; then
     ray start --head --port=$RAY_MASTER_PORT --dashboard-host=0.0.0.0 --num-gpus 8
     echo "Started Ray head node at $NODE_IP"
 else
-    if [ "$PET_NODE_RANK" -lt "$((WORLD_SIZE))" ]; then
-        sleep 10
-        ray start --address="${MASTER_ADDR}:${RAY_MASTER_PORT}" --num-gpus 8 --block
-        echo "Joined Ray cluster at ${MASTER_ADDR}:${RAY_MASTER_PORT}"
-    fi
+    sleep 10
+    ray start --address="${MASTER_ADDR}:${RAY_MASTER_PORT}" --num-gpus 8 --block
+    echo "Joined Ray cluster at ${MASTER_ADDR}:${RAY_MASTER_PORT}"
 fi
 
 # Wait for 30 seconds to ensure the Ray cluster is ready
-sleep 30
+# sleep 30
 
-
+# Read the LLM IP from the file
+# if [ ! -f "$BASEDIR/tmp/llm_ip.txt" ]; then
+#     echo "Error: LLM IP file not found at $BASEDIR/tmp/llm_ip.txt"
+#     echo "Please ensure SGLANG service node (last rank) is running first"
+#     exit 1
+# fi
+# export LLM_AS_A_JUDGE_BASE=$(cat $BASEDIR/tmp/llm_ip.txt)
+# echo "Read LLM_AS_A_JUDGE_BASE: $LLM_AS_A_JUDGE_BASE"
 
 # In master node, wait for the SGLANG service to be ready
 if [ "$PET_NODE_RANK" -eq 0 ]; then
-
-    # Read the LLM IP from the file
-    if [ ! -f "$BASEDIR/tmp/llm_ip.txt" ]; then
-        echo "Error: LLM IP file not found at $BASEDIR/tmp/llm_ip.txt"
-        echo "Please ensure SGLANG service node (last rank) is running first"
-        exit 1
-    fi
-    export LLM_AS_A_JUDGE_BASE=$(cat $BASEDIR/tmp/llm_ip.txt)
-    echo "Read LLM_AS_A_JUDGE_BASE: $LLM_AS_A_JUDGE_BASE"
 
     # Create log and checkpoint directories
     if [ ! -d logs/$PROJECT_NAME/$EXPERIMENT_NAME ]; then
@@ -109,30 +106,30 @@ if [ "$PET_NODE_RANK" -eq 0 ]; then
         mkdir -p checkpoints/logs/rl_logging_board
     fi
 
-    # Wait for the SGLANG service to be ready
-    echo "Waiting for SGLANG judge service to be ready at ${LLM_AS_A_JUDGE_BASE}..."
-    RETRY=0
-    MAX_RETRIES=600  # Wait up to 600 times (about 50 minutes)
-    while ! curl -s "${LLM_AS_A_JUDGE_BASE}/models" > /dev/null; do
-        sleep 5
-        RETRY=$((RETRY+1))
-        if [ $RETRY -ge $MAX_RETRIES ]; then
-            echo "Error: SGLANG judge service not available after $((MAX_RETRIES * 5)) seconds."
-            exit 1
-        fi
-    done
-    echo "SGLANG judge service is up. Proceeding with training..."
+    # # Wait for the SGLANG service to be ready
+    # echo "Waiting for SGLANG judge service to be ready at ${LLM_AS_A_JUDGE_BASE}..."
+    # RETRY=0
+    # MAX_RETRIES=600  # Wait up to 600 times (about 50 minutes)
+    # while ! curl -s "${LLM_AS_A_JUDGE_BASE}/models" > /dev/null; do
+    #     sleep 5
+    #     RETRY=$((RETRY+1))
+    #     if [ $RETRY -ge $MAX_RETRIES ]; then
+    #         echo "Error: SGLANG judge service not available after $((MAX_RETRIES * 5)) seconds."
+    #         exit 1
+    #     fi
+    # done
+    # echo "SGLANG judge service is up. Proceeding with training..."
 
 
 
 PYTHONUNBUFFERED=1 python3 -m verl.trainer.main_ppo \
     --config-path=${BASEDIR}/recipe/antique/configs \
-    --config-name='antique_multiturn_grpo' \
+    --config-name='antique_multiturn_grpo_multi_image' \
     data.train_files=${DATASET_1} \
-    data.val_files=[${DATASET_1}] \
+    data.val_files=[${DATASET_2}] \
     data.train_batch_size=64 \
-    data.max_prompt_length=8192 \
-    data.max_response_length=16384 \
+    data.max_prompt_length=32768 \
+    data.max_response_length=20480 \
     data.return_raw_chat=True \
     data.filter_overlong_prompts=True \
     algorithm.adv_estimator=grpo \
@@ -167,7 +164,7 @@ PYTHONUNBUFFERED=1 python3 -m verl.trainer.main_ppo \
     actor_rollout_ref.rollout.multi_turn.max_assistant_turns=5 \
     actor_rollout_ref.rollout.multi_turn.max_user_turns=5 \
     actor_rollout_ref.rollout.multi_turn.max_parallel_calls=1 \
-    actor_rollout_ref.rollout.multi_turn.tool_config_path=recipe/deepeyes/configs/image_zoom_in_tool_config.yaml \
+    trainer.rollout_data_dir=logs/${PROJECT_NAME}/${EXPERIMENT_NAME}/rollout \
     trainer.critic_warmup=0 \
     trainer.logger=['console','wandb','tensorboard'] \
     trainer.val_before_train=False \
@@ -180,6 +177,6 @@ PYTHONUNBUFFERED=1 python3 -m verl.trainer.main_ppo \
     trainer.default_local_dir=${SAVE_CHECKPOINT_DIR}/${PROJECT_NAME}/${EXPERIMENT_NAME} \
     +trainer.tensorboard_dir=${SAVE_CHECKPOINT_DIR}/logs/tensorboard \
     +trainer.rl_logging_board_dir=${SAVE_CHECKPOINT_DIR}/logs/rl_logging_board \
-    trainer.total_epochs=1 \
+    trainer.total_epochs=8 \
     $@ 2>&1 | tee -a logs/$PROJECT_NAME/$EXPERIMENT_NAME/training.log
 fi
